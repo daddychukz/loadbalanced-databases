@@ -1,0 +1,62 @@
+---
+- hosts: master
+  become: yes
+  remote_user: ubuntu
+  gather_facts: false
+  pre_tasks:
+     - raw: sudo apt-get -y install python-simplejson
+     # action: setup will gather facts after python2 has been installed
+     - action: setup
+  vars:
+    ipaddress: "{{ master_ip }}"
+    server_id: "{{ master_server_id }}"
+    relay_log: ""
+  tasks:
+    - name: Install mysql-server
+      apt: name={{ item }} update_cache=yes state=present
+      with_items:
+      - mysql-server
+
+    - name: install python mysql bindings
+      apt: name=python-mysqldb state=present
+
+    - name: Update mysql.cnf
+      template:
+        src: ./mysqld.conf.j2
+        dest: /etc/mysql/mysql.conf.d/mysqld.cnf
+      notify: Restart mysql
+
+    - name: Create database with name 'testdb'
+      mysql_db:
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+        name: testdb
+        state: present
+
+    - name: Create haproxy user
+      mysql_user:
+        name: haproxy_user
+        state: present
+
+    - name: Create haproxy user root
+      mysql_user:
+        name: haproxy_root
+        host: "{{ haproxy_ip }}"
+        password: 'haproxy_root_pass'
+        priv: '*.*:ALL'
+        state: present
+
+    - name: copy key file
+      copy:
+        src: /Users/andeladeveloper/.ssh/kryptonite
+        dest: /home/ubuntu/kryptonite
+        mode: 0700
+    
+    - name: Dump database to testdb.sql
+      mysql_db:
+        state: dump
+        name: testdb
+        target: /home/ubuntu/testdb.sql
+  
+  handlers:
+    - name: Restart mysql
+      service: name=mysql state=restarted enabled=yes
